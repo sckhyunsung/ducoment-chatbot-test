@@ -1,7 +1,12 @@
 streamlit
-google-search-results
-pypdf
-langchain_openai 
-langchain 
-langchain-community 
+langchain
+langchain-community
+langchain-openai
 faiss-cpu
+pypdf
+openpyxl
+python-docx
+python-pptx
+unstructured
+pandas
+beautifulsoup4
