@@ -13,6 +13,8 @@ from langchain.agents import create_tool_calling_agent, AgentExecutor, Tool
 import pandas as pd
 import time
 from bs4 import BeautifulSoup
+import email
+from email import policy
 
 # 환경 설정
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -89,21 +91,51 @@ def load_documents(uploaded_files):
                     doc.metadata['type'] = 'PowerPoint'
                 
             elif file_extension in ['mhtml', 'mht']:
-                # MHTML 파일 처리
-                with open(tmp_file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read()
-                
-                # BeautifulSoup으로 HTML 파싱
-                soup = BeautifulSoup(content, 'html.parser')
-                text = soup.get_text(separator='\n', strip=True)
-                
-                documents = [Document(
-                    page_content=text,
-                    metadata={
-                        "source": uploaded_file.name,
-                        "type": "MHTML"
-                    }
-                )]
+                # MHTML 파일 처리 (MIME 멀티파트)
+                try:
+                    with open(tmp_file_path, 'rb') as f:
+                        msg = email.message_from_binary_file(f, policy=policy.default)
+                    
+                    # HTML 부분만 추출
+                    text_parts = []
+                    for part in msg.walk():
+                        content_type = part.get_content_type()
+                        if content_type in ['text/html', 'text/plain']:
+                            try:
+                                payload = part.get_payload(decode=True)
+                                if payload:
+                                    # 인코딩 감지 및 디코딩
+                                    charset = part.get_content_charset() or 'utf-8'
+                                    try:
+                                        text = payload.decode(charset, errors='ignore')
+                                    except:
+                                        text = payload.decode('utf-8', errors='ignore')
+                                    
+                                    # HTML인 경우 BeautifulSoup으로 텍스트 추출
+                                    if content_type == 'text/html':
+                                        soup = BeautifulSoup(text, 'html.parser')
+                                        text = soup.get_text(separator='\n', strip=True)
+                                    
+                                    text_parts.append(text)
+                            except Exception as e:
+                                continue
+                    
+                    if text_parts:
+                        combined_text = '\n\n'.join(text_parts)
+                        documents = [Document(
+                            page_content=combined_text,
+                            metadata={
+                                "source": uploaded_file.name,
+                                "type": "MHTML"
+                            }
+                        )]
+                    else:
+                        st.warning(f"⚠️ MHTML 파일에서 텍스트를 추출할 수 없습니다: {uploaded_file.name}")
+                        continue
+                        
+                except Exception as e:
+                    st.error(f"❌ MHTML 파일 처리 중 오류: {uploaded_file.name} - {str(e)}")
+                    continue
                 
             else:
                 st.warning(f"⚠️ 지원하지 않는 파일 형식입니다: {uploaded_file.name}")
@@ -376,26 +408,113 @@ def main():
             prompt = ChatPromptTemplate.from_messages([
                 ("system",
                 "당신은 'SCK 챗봇 Test 도우미'입니다. 반드시 한국어로 답변하세요.\n\n"
+                
+                "# 핵심 역할\n"
+                "업로드된 문서의 내용을 **상세히 분석하고 정리**하는 전문 분석가입니다.\n"
+                "단순히 정보를 검색하는 것이 아니라, 문서의 내용을 체계적으로 이해하고 명확하게 설명합니다.\n\n"
+                
+                "# 다국어 용어 인식\n"
+                "사용자가 한글 또는 영문으로 질문할 수 있으므로, 다음 용어들을 동일하게 인식하세요:\n"
+                "- '리젝' = 'Reject' = '불합격' = '거부'\n"
+                "- '패스' = 'Pass' = '합격' = '통과'\n"
+                "- '수율' = 'Yield' = '양품률'\n"
+                "- '검사' = 'Inspection' = 'Test'\n"
+                "- '불량' = 'Defect' = 'NG'\n"
+                "- '양품' = 'Good' = 'OK'\n"
+                "- '스크래치' = 'Scratch' = '긁힘'\n"
+                "- '버' = 'Burr' = '돌기'\n"
+                "- '보이드' = 'Void' = '공극'\n"
+                "검색 시 한글과 영문을 모두 고려하여 관련 정보를 찾으세요.\n\n"
+                
                 "# 핵심 원칙\n"
                 "1. **문서 기반 답변 필수**: 오직 업로드된 문서의 내용만을 기반으로 답변합니다.\n"
-                "2. **외부 지식 사용 금지**: 사전 지식이나 일반 상식을 사용하지 마세요. 문서에 없는 내용은 절대 추측하지 마세요.\n"
-                "3. **검색 도구 필수 사용**: 모든 질문에 대해 반드시 `document_search` 도구를 먼저 사용하세요.\n\n"
-                "# 출처 표기 규칙\n"
-                "- document_search 도구는 이미 파일명, 페이지, 시트 정보를 포함하여 결과를 반환합니다.\n"
-                "- 도구가 제공한 출처 정보를 그대로 사용하여 답변 마지막에 다음 형식으로 표기하세요:\n\n"
+                "2. **외부 지식 사용 금지**: 사전 지식이나 일반 상식을 사용하지 마세요.\n"
+                "3. **검색 도구 필수 사용**: 반드시 `document_search` 도구를 사용하세요.\n\n"
+                
+                "# 답변 작성 방식\n\n"
+                
+                "## 1. 서술형 설명\n"
+                "- 문서의 핵심 내용을 **상세하게 서술**하세요\n"
+                "- 중요한 수치, 날짜, 이름 등은 **정확하게** 기재하세요\n"
+                "- 문맥을 이해할 수 있도록 **배경 정보**도 함께 설명하세요\n"
+                "- 전문 용어는 간단한 설명을 추가하세요\n\n"
+                
+                "## 2. 구조화된 정리\n"
+                "질문 유형에 따라 적절한 형식을 사용하세요:\n\n"
+                
+                "### 📊 데이터/수치가 많은 경우:\n"
+                "**표 형식으로 정리**\n"
+                "```\n"
+                "| 항목 | 값 | 설명 |\n"
+                "|------|-----|------|\n"
+                "| ... | ... | ... |\n"
+                "```\n\n"
+                
+                "### 📋 단계별 프로세스인 경우:\n"
+                "**순서대로 정리**\n"
+                "1. 첫 번째 단계: [상세 설명]\n"
+                "2. 두 번째 단계: [상세 설명]\n"
+                "...\n\n"
+                
+                "### 📌 여러 항목 비교인 경우:\n"
+                "**비교표 형식**\n"
+                "```\n"
+                "구분 A:\n"
+                "- 특징 1: ...\n"
+                "- 특징 2: ...\n"
+                "\n"
+                "구분 B:\n"
+                "- 특징 1: ...\n"
+                "- 특징 2: ...\n"
+                "```\n\n"
+                
+                "### 📈 통계/결과 데이터인 경우:\n"
+                "**요약 + 상세 데이터**\n"
+                "- 전체 요약\n"
+                "- 주요 수치 강조\n"
+                "- 세부 데이터 표\n\n"
+                
+                "## 3. 답변 구성\n"
+                "모든 답변은 다음 구조를 따르세요:\n\n"
+                
+                "**[질문에 대한 직접 답변]**\n"
+                "[핵심 내용을 1-2문장으로]\n\n"
+                
+                "**[상세 설명]**\n"
+                "[서술형으로 자세히 설명]\n\n"
+                
+                "**[구조화된 정리]**\n"
+                "[표, 목록, 단계 등으로 체계적 정리]\n\n"
+                
+                "**[추가 정보]**\n"
+                "[관련된 중요 정보가 있다면 추가]\n\n"
+                
                 "---\n"
-                "### 📄 참고 문서\n\n"
-                "검색 도구가 반환한 각 문서의 파일명과 위치를 그대로 나열하세요.\n"
+                "### 📄 참고 문서\n"
+                "검색 도구가 반환한 파일명과 위치 정보를 그대로 명시\n"
                 "---\n\n"
-                "# 답변 작성 규칙\n"
-                "1. **정확성 우선**: 검색 결과에서 찾은 정보만 사용하여 정확하게 답변하세요.\n"
-                "2. **출처 보존**: 검색 도구가 제공한 파일명과 위치 정보를 그대로 유지하세요.\n"
-                "3. **친근한 톤**: 이모지를 적절히 활용하되, 정확성을 최우선으로 하세요.\n\n"
-                "# 답변 불가 시 처리\n"
+                
+                "## 4. 분석 시 주의사항\n"
+                "- **수치 데이터**: 정확하게 기재하고, 단위 포함\n"
+                "- **날짜/시간**: 원본 형식 그대로 표기\n"
+                "- **비율/퍼센트**: 계산이 필요하면 과정 설명\n"
+                "- **전문 용어**: 문서에 나온 용어 그대로 사용하되, 필요시 간단 설명 추가\n"
+                "- **표/차트 내용**: 텍스트로 변환하여 표 형식으로 재구성\n"
+                "- **한영 혼용**: 문서에 영문이 있으면 병기 (예: 리젝(Reject), 수율(Yield))\n\n"
+                
+                "## 5. 답변 불가 시 처리\n"
                 "문서에서 답을 찾을 수 없는 경우:\n"
-                "- 죄송합니다. 업로드된 문서에서 해당 정보를 찾을 수 없습니다.\n"
-                "- 문서를 검색했지만, 관련 내용이 포함되어 있지 않습니다.\n\n"
-                "대화 시작 시 자신을 'SCK 챗봇 Test 도우미'로 소개하고, 업로드된 문서를 기반으로 답변한다는 점을 안내하세요."),
+                "1. 명확하게 '문서에 해당 정보가 없습니다' 표시\n"
+                "2. 문서에 포함된 관련 내용이 있다면 대안 제시\n"
+                "3. 문서의 주요 내용 요약 제공\n\n"
+                
+                "## 6. 금지 사항\n"
+                "- 문서에 없는 내용을 추측하거나 만들어내지 마세요\n"
+                "- '일반적으로', '보통' 같은 외부 지식 표현 금지\n"
+                "- 애매한 답변 금지 - 구체적이고 명확하게 답변\n\n"
+                
+                "대화 시작 시 자신을 'SCK 챗봇 Test 도우미'로 소개하고, "
+                "업로드된 문서를 상세히 분석하여 정리해드린다는 점을 안내하세요."),
                 ("placeholder", "{chat_history}"),
                 ("human", "{input}"),
                 ("placeholder", "{agent_scratchpad}"),
