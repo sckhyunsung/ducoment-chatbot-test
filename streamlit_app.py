@@ -3,16 +3,16 @@ import streamlit as st
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import FAISS
 from langchain.chat_models import ChatOpenAI
-from langchain.document_loaders import PyPDFLoader, TextLoader, CSVLoader, UnstructuredWordDocumentLoader, UnstructuredExcelLoader, UnstructuredPowerPointLoader
+from langchain_community.document_loaders import PyPDFLoader, TextLoader, CSVLoader, UnstructuredWordDocumentLoader, UnstructuredExcelLoader, UnstructuredPowerPointLoader, UnstructuredHTMLLoader
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain.tools.retriever import create_retriever_tool
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema import Document
 import tempfile
 from langchain.agents import create_tool_calling_agent, AgentExecutor, Tool
 import pandas as pd
 import time
+from bs4 import BeautifulSoup
 
 # 환경 설정
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -87,6 +87,23 @@ def load_documents(uploaded_files):
                 for doc in documents:
                     doc.metadata['source'] = uploaded_file.name
                     doc.metadata['type'] = 'PowerPoint'
+                
+            elif file_extension in ['mhtml', 'mht']:
+                # MHTML 파일 처리
+                with open(tmp_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+                
+                # BeautifulSoup으로 HTML 파싱
+                soup = BeautifulSoup(content, 'html.parser')
+                text = soup.get_text(separator='\n', strip=True)
+                
+                documents = [Document(
+                    page_content=text,
+                    metadata={
+                        "source": uploaded_file.name,
+                        "type": "MHTML"
+                    }
+                )]
                 
             else:
                 st.warning(f"⚠️ 지원하지 않는 파일 형식입니다: {uploaded_file.name}")
@@ -261,6 +278,7 @@ def main():
             - 📊 Excel (.xlsx, .xls)
             - 📘 Word (.docx, .doc)
             - 🎨 PowerPoint (.pptx, .ppt)
+            - 🌐 MHTML (.mhtml, .mht)
             - 📄 Text (.txt)
             - 📑 CSV (.csv)
             """)
@@ -268,7 +286,7 @@ def main():
         uploaded_files = st.file_uploader(
             "파일을 선택하세요", 
             accept_multiple_files=True, 
-            type=['pdf', 'xlsx', 'xls', 'docx', 'doc', 'pptx', 'ppt', 'txt', 'csv'],
+            type=['pdf', 'xlsx', 'xls', 'docx', 'doc', 'pptx', 'ppt', 'mhtml', 'mht', 'txt', 'csv'],
             key="file_uploader",
             help="여러 파일을 동시에 업로드할 수 있습니다"
         )
@@ -285,7 +303,8 @@ def main():
                     file_icon = {
                         'pdf': '📕', 'xlsx': '📊', 'xls': '📊',
                         'docx': '📘', 'doc': '📘', 'pptx': '🎨',
-                        'ppt': '🎨', 'txt': '📄', 'csv': '📑'
+                        'ppt': '🎨', 'mhtml': '🌐', 'mht': '🌐',
+                        'txt': '📄', 'csv': '📑'
                     }.get(file.name.split('.')[-1].lower(), '📄')
                     
                     st.markdown(f"{file_icon} **{file.name}**")
