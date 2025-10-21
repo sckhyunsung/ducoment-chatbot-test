@@ -1,18 +1,16 @@
 # ---- App runtime ----
 streamlit>=1.36,<1.51
 
-# ---- LangChain family ----
+# ---- LangChain family (0.2 라인으로 통일) ----
 langchain==0.2.10
 langchain-community==0.2.10
 langchain-text-splitters==0.2.2
-langchain-openai==0.2.2
-# (주의) langchain-core는 명시하지 않습니다. langchain이 맞는 버전을 끌어옵니다.
+langchain-openai==0.1.7   # ← 여기만 0.1.x로 내립니다(핵심)
 
 # ---- OpenAI SDK ----
 openai>=1.30.0,<2
 
 # ---- Vector / parsing / loaders ----
-# faiss는 3.11에서 휠이 안정적입니다.
 faiss-cpu==1.8.0.post1
 pypdf>=4.2.0
 pandas>=2.1.0
@@ -20,6 +18,3 @@ openpyxl>=3.1.2
 python-docx>=1.0.1
 python-pptx>=0.6.23
 beautifulsoup4>=4.12.0
-
-# ✂️ unstructured는 설치 실패가 잦아 Cloud 기본 배포에서 제거합니다.
-# 필요 시 나중에 별도 브랜치에서 추가하세요.
