@@ -1,10 +1,7 @@
 streamlit
-langchain>=0.2.10
-langchain-core>=0.2.10
-langchain-community>=0.2.10
-langchain-openai>=0.1.7
-langchain-text-splitters>=0.2.2
-
+langchain
+langchain-community
+langchain-openai
 faiss-cpu
 pypdf
 openpyxl

@@ -171,8 +171,8 @@ def create_vectorstore(uploaded_files):
         
         # 2단계: 텍스트 분할
         status_container.info(f"🔄 **2단계**: 문서를 {len(all_documents)}개의 섹션으로 분할하고 있습니다...")
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        split_docs = text_splitter.split_documents(all_documents)
+        text_splitters = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        split_docs = text_splitters.split_documents(all_documents)
         
         # 3단계: 벡터 임베딩
         status_container.info(f"🔄 **3단계**: {len(split_docs)}개의 청크를 벡터로 변환하고 있습니다...\n(OpenAI API 호출 중 - 잠시만 기다려주세요)")
