@@ -367,7 +367,11 @@ def create_vectorstore(uploaded_files):
         status_container.info(
             f"🔄 **3단계**: {len(split_docs)}개 청크 임베딩 중... (OpenAI API 호출)"
         )
-        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+        embeddings = OpenAIEmbeddings(
+    model="text-embedding-3-small",
+    max_retries=6,
+    timeout=60.0,        # 초
+)
         vector = FAISS.from_documents(split_docs, embeddings)
         retriever = vector.as_retriever(search_kwargs={"k": 5})
 
@@ -613,10 +617,12 @@ def main():
             return
 
         # LLM init (support both model and model_name kwargs across versions)
+        
         try:
-            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_retries=3, timeout=60.0)
         except TypeError:
-            llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0)
+            llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0, max_retries=3, timeout=60.0)
+
 
         st.session_state["llm"] = llm
         st.session_state["retriever"] = vs["retriever"]
