@@ -1,18 +1,18 @@
 # ---- App runtime ----
 streamlit>=1.36
 
-# ---- LangChain family (서로 호환되는 라인으로 맞춤) ----
+# ---- LangChain family ----
 langchain==0.2.10
-langchain-core==0.2.10
 langchain-community==0.2.10
 langchain-text-splitters==0.2.2
-langchain-openai==0.2.2    # ← 0.2.x로 상향
+langchain-openai==0.2.2
+# (주의) langchain-core 줄은 넣지 마세요. langchain이 맞는 버전으로 끌어옵니다.
 
-# ---- OpenAI SDK (필수) ----
+# ---- OpenAI SDK ----
 openai>=1.30.0
 
 # ---- Vector / parsing / loaders ----
-faiss-cpu>=1.8.0,<1.9.0     # Cloud에서 가장 안정적 라인
+faiss-cpu>=1.8.0,<1.9.0
 pypdf>=4.2.0
 pandas>=2.1.0
 openpyxl>=3.1.2

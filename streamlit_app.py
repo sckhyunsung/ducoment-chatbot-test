@@ -1,13 +1,17 @@
 import os
+import re
 import time
 import tempfile
 import email
 from email import policy
-from typing import List, Tuple, Optional
+from typing import Any, Dict, List, Optional, Protocol
 
 import pandas as pd
 import streamlit as st
-from bs4 import BeautifulSoup
+try:
+    from bs4 import BeautifulSoup  # type: ignore[reportMissingImports]
+except Exception:
+    BeautifulSoup = None  # HTML → text 변환을 간단 폴백으로 처리
 
 # =============================================================
 # Environment tweaks
@@ -23,22 +27,22 @@ try:
     _SPLITTER_SRC = "langchain_text_splitters"
 except Exception:
     try:
-        from langchain.text_splitters import RecursiveCharacterTextSplitter  # newer LC
+        from langchain.text_splitters import RecursiveCharacterTextSplitter  # type: ignore[reportMissingImports]
         _SPLITTER_SRC = "langchain.text_splitters"
     except Exception:
-        from langchain.text_splitter import RecursiveCharacterTextSplitter  # old LC
+        from langchain.text_splitter import RecursiveCharacterTextSplitter  # type: ignore[reportMissingImports]
         _SPLITTER_SRC = "langchain.text_splitter"
 
 # VectorStore FAISS (community -> old)
 try:
     from langchain_community.vectorstores import FAISS
 except Exception:
-    from langchain.vectorstores import FAISS  # very old fallback
+    from langchain.vectorstores import FAISS  # type: ignore[reportMissingImports]
 
 # Embeddings & Chat LLM (langchain_openai)
 try:
     from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-except Exception as e:
+except Exception:
     st.error("❌ 'langchain_openai'가 설치되어 있지 않습니다. requirements.txt에 'langchain-openai>=0.2.0'을 추가하세요.")
     raise
 
@@ -52,7 +56,7 @@ try:
     )
 except Exception:
     try:
-        from langchain.document_loaders import (
+        from langchain.document_loaders import (  # type: ignore[reportMissingImports]
             PyPDFLoader,
             TextLoader,
             UnstructuredWordDocumentLoader,
@@ -64,15 +68,18 @@ except Exception:
         UnstructuredWordDocumentLoader = None
         UnstructuredPowerPointLoader = None
 
-# Prompts
-from langchain.prompts import ChatPromptTemplate
+# Prompts (core 우선, 구버전 폴백)
+try:
+    from langchain_core.prompts import ChatPromptTemplate
+except Exception:
+    from langchain.prompts import ChatPromptTemplate  # type: ignore[reportMissingImports]
 
 # Tool & Agent (newer paths first)
 try:
     from langchain.tools import Tool
 except Exception:
     try:
-        from langchain.agents import Tool  # very old
+        from langchain.agents import Tool  # type: ignore[reportMissingImports]
     except Exception:
         Tool = None
 
@@ -88,6 +95,7 @@ except Exception:
 # =============================================================
 # Utility: simple banner for current import modes (helps debugging)
 # =============================================================
+
 def _debug_imports_banner():
     st.caption(
         f"🔧 Imports — Splitter: `{_SPLITTER_SRC}`, Agent: "
@@ -95,22 +103,30 @@ def _debug_imports_banner():
     )
 
 # =============================================================
-# Document loading helpers
+# Document class & fallback
 # =============================================================
+
 class SimpleDocument:
     """Lightweight fallback if LC Document import path ever changes."""
+
     def __init__(self, page_content: str, metadata: Optional[dict] = None):
         self.page_content = page_content
         self.metadata = metadata or {}
+
 
 # Prefer official LC Document class, but fall back if needed
 try:
     from langchain_core.documents import Document as LCDocument
 except Exception:
     try:
-        from langchain.schema import Document as LCDocument
+        from langchain.schema import Document as LCDocument  # type: ignore[reportMissingImports]
     except Exception:
         LCDocument = None
+
+# Protocol for type checking (avoids Pylance "형식 식에는 변수를 ..." issue)
+class DocumentLike(Protocol):
+    page_content: str
+    metadata: Dict[str, Any]
 
 DocumentCls = LCDocument if LCDocument is not None else SimpleDocument
 
@@ -125,10 +141,11 @@ def _read_txt_fallback(path: str) -> str:
 
 
 # -------------------------------------------------------------
-# Load various file types into a list[Document]
+# Load various file types into a list[DocumentLike]
 # -------------------------------------------------------------
-def load_documents(uploaded_files) -> List[DocumentCls]:
-    all_documents: List[DocumentCls] = []
+
+def load_documents(uploaded_files) -> List[DocumentLike]:
+    all_documents: List[DocumentLike] = []
     progress_bar = st.progress(0)
     status_text = st.empty()
     total_files = len(uploaded_files)
@@ -206,7 +223,7 @@ def load_documents(uploaded_files) -> List[DocumentCls]:
                     with open(tmp_file_path, "rb") as f:
                         msg = email.message_from_binary_file(f, policy=policy.default)
 
-                    text_parts = []
+                    text_parts: List[str] = []
                     for part in msg.walk():
                         content_type = part.get_content_type()
                         if content_type in ["text/html", "text/plain"]:
@@ -219,8 +236,12 @@ def load_documents(uploaded_files) -> List[DocumentCls]:
                             except Exception:
                                 text = payload.decode("utf-8", errors="ignore")
                             if content_type == "text/html":
-                                soup = BeautifulSoup(text, "html.parser")
-                                text = soup.get_text(separator="\n", strip=True)
+                                if BeautifulSoup is not None:
+                                    soup = BeautifulSoup(text, "html.parser")
+                                    text = soup.get_text(separator="\n", strip=True)
+                                else:
+                                    # 아주 단순한 태그 제거 폴백
+                                    text = re.sub(r"<[^>]+>", "", text)
                             text_parts.append(text)
 
                     if text_parts:
@@ -238,7 +259,7 @@ def load_documents(uploaded_files) -> List[DocumentCls]:
                 continue
 
             # Normalize metadata for LC vs SimpleDocument
-            norm_docs = []
+            norm_docs: List[DocumentLike] = []
             for d in documents:
                 # Some loaders may yield dict-like objects in very old versions
                 if hasattr(d, "page_content"):
@@ -268,6 +289,7 @@ def load_documents(uploaded_files) -> List[DocumentCls]:
 # -------------------------------------------------------------
 # Vector store creation and retrieval tool
 # -------------------------------------------------------------
+
 def create_vectorstore(uploaded_files):
     status_container = st.empty()
 
@@ -298,7 +320,7 @@ def create_vectorstore(uploaded_files):
         time.sleep(1)
         status_container.empty()
 
-        def _format_location(md: dict) -> str:
+        def _format_location(md: Dict[str, Any]) -> str:
             page = md.get("page", "")
             sheet = md.get("sheet", "")
             doc_type = md.get("type", "")
@@ -662,7 +684,7 @@ def main():
                         response = ai_msg.content if hasattr(ai_msg, "content") else str(ai_msg)
 
                         # Add reference block (file and location list)
-                        def _format_location(md: dict) -> str:
+                        def _format_location(md: Dict[str, Any]) -> str:
                             page = md.get("page", "")
                             sheet = md.get("sheet", "")
                             doc_type = md.get("type", "")
@@ -704,3 +726,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+#ㅇㅇㅇㅇㅇㄴㄻㄴㅇㄹ
