@@ -1,17 +1,22 @@
-streamlit
+# ---- App runtime ----
+streamlit>=1.36
 
-# LangChain 최신 계열 (서로 호환되는 버전으로 맞춤)
+# ---- LangChain family (서로 호환되는 라인으로 맞춤) ----
 langchain==0.2.10
 langchain-core==0.2.10
 langchain-community==0.2.10
-langchain-openai==0.1.7
 langchain-text-splitters==0.2.2
+langchain-openai==0.2.2    # ← 0.2.x로 상향
 
-faiss-cpu
-pypdf
-openpyxl
-python-docx
-python-pptx
-unstructured
-pandas
-beautifulsoup4
+# ---- OpenAI SDK (필수) ----
+openai>=1.30.0
+
+# ---- Vector / parsing / loaders ----
+faiss-cpu>=1.8.0,<1.9.0     # Cloud에서 가장 안정적 라인
+pypdf>=4.2.0
+pandas>=2.1.0
+openpyxl>=3.1.2
+python-docx>=1.0.1
+python-pptx>=0.6.23
+unstructured>=0.15.0
+beautifulsoup4>=4.12.0
