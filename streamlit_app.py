@@ -143,7 +143,6 @@ def _read_txt_fallback(path: str) -> str:
 # -------------------------------------------------------------
 # Load various file types into a list[DocumentLike]
 # -------------------------------------------------------------
-
 def load_documents(uploaded_files) -> List[DocumentLike]:
     all_documents: List[DocumentLike] = []
     progress_bar = st.progress(0)
@@ -181,22 +180,80 @@ def load_documents(uploaded_files) -> List[DocumentLike]:
                     documents = [DocumentCls(page_content=text, metadata={"source": uploaded_file.name, "type": "Text"})]
 
             elif file_extension == "csv":
-                df = pd.read_csv(tmp_file_path)
-                text = df.to_string()
-                documents = [DocumentCls(page_content=text, metadata={"source": uploaded_file.name, "type": "CSV"})]
+                # -------- CSV: 대용량 안전 처리 --------
+                MAX_ROWS = 100_000          # CSV 전체에서 사용 가능한 최대 행수
+                MAX_CHARS = 200_000         # 텍스트 최대 길이
+                try:
+                    df = pd.read_csv(tmp_file_path, dtype=str, on_bad_lines="skip", low_memory=False, encoding="utf-8")
+                except UnicodeDecodeError:
+                    df = pd.read_csv(tmp_file_path, dtype=str, on_bad_lines="skip", low_memory=False, encoding="cp949")
+
+                rows = df.shape[0]
+                truncated = False
+                if rows > MAX_ROWS:
+                    head = df.head(MAX_ROWS // 2)
+                    tail = df.tail(MAX_ROWS // 2)
+                    df_limited = pd.concat([head, tail])
+                    truncated = True
+                else:
+                    df_limited = df
+
+                # CSV는 그냥 CSV 포맷으로 문자열화(메모리/속도 유리)
+                text = "CSV\n\n" + df_limited.to_csv(index=False)
+                if len(text) > MAX_CHARS:
+                    text = text[:MAX_CHARS] + "\n...[TRUNCATED]..."
+                    truncated = True
+
+                meta = {"source": uploaded_file.name, "type": "CSV"}
+                if truncated:
+                    meta["note"] = f"truncated_from_{rows}_rows"
+                documents = [DocumentCls(page_content=text, metadata=meta)]
 
             elif file_extension in ["xlsx", "xls"]:
-                excel_file = pd.ExcelFile(tmp_file_path)
+                # -------- Excel: 대용량 안전 처리 --------
+                MAX_ROWS_PER_SHEET = 1_500   # 시트당 최대 1500행(앞 750 + 뒤 750)
+                MAX_CHARS_PER_SHEET = 200_000
+
+                # openpyxl 엔진 우선 사용 (Cloud에서 안정)
+                try:
+                    excel_file = pd.ExcelFile(tmp_file_path, engine="openpyxl")
+                except Exception:
+                    excel_file = pd.ExcelFile(tmp_file_path)
+
                 documents = []
                 for sheet_name in excel_file.sheet_names:
-                    df = pd.read_excel(tmp_file_path, sheet_name=sheet_name)
-                    text = f"Sheet: {sheet_name}\n\n{df.to_string()}"
-                    documents.append(
-                        DocumentCls(
-                            page_content=text,
-                            metadata={"source": uploaded_file.name, "sheet": sheet_name, "type": "Excel"},
-                        )
-                    )
+                    try:
+                        df = pd.read_excel(excel_file, sheet_name=sheet_name, dtype=str)
+                    except Exception:
+                        df = pd.read_excel(tmp_file_path, sheet_name=sheet_name, dtype=str)
+
+                    rows = df.shape[0]
+                    truncated = False
+
+                    if rows > MAX_ROWS_PER_SHEET:
+                        head = df.head(MAX_ROWS_PER_SHEET // 2)
+                        tail = df.tail(MAX_ROWS_PER_SHEET // 2)
+                        df_limited = pd.concat([head, tail])
+                        truncated = True
+                    else:
+                        df_limited = df
+
+                    # 표를 탭-구분 텍스트로 변환(가벼움)
+                    text = f"Sheet: {sheet_name}\n\n" + df_limited.to_csv(index=False, sep="\t")
+
+                    if len(text) > MAX_CHARS_PER_SHEET:
+                        text = text[:MAX_CHARS_PER_SHEET] + "\n...[TRUNCATED]..."
+                        truncated = True
+
+                    meta = {
+                        "source": uploaded_file.name,
+                        "sheet": sheet_name,
+                        "type": "Excel",
+                    }
+                    if truncated:
+                        meta["note"] = f"truncated_from_{rows}_rows"
+
+                    documents.append(DocumentCls(page_content=text, metadata=meta))
 
             elif file_extension in ["docx", "doc"]:
                 if UnstructuredWordDocumentLoader is None:
