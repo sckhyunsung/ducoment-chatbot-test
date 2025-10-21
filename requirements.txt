@@ -1,7 +1,12 @@
 streamlit
-langchain
-langchain-community
-langchain-openai
+
+# LangChain 최신 계열 (서로 호환되는 버전으로 맞춤)
+langchain==0.2.10
+langchain-core==0.2.10
+langchain-community==0.2.10
+langchain-openai==0.1.7
+langchain-text-splitters==0.2.2
+
 faiss-cpu
 pypdf
 openpyxl
